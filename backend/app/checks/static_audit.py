@@ -1,74 +1,56 @@
 # app/checks/static_audit.py
+import subprocess
+import json
 import os
-import re
-
 
 def static_audit(workdir: str) -> list[dict]:
-    """
-    纯 Python 实现的轻量级静态代码审计器。
-    替代损坏的 Semgrep，确保系统流程能跑通并产出真实数据。
-    """
-    print(f"[静态审计] 开始使用内置引擎扫描目录: {workdir}")
+    print(f"[静态审计] 使用 Docker 运行 Semgrep，目标目录: {workdir}")
 
-    findings = []
-
-    # 定义我们要扫描的危险模式（正则表达式）
-    rules = [
-        {
-            "rule_id": "SEC-001",
-            "severity": "HIGH",
-            "message": "发现潜在的危险函数调用 (eval/exec)",
-            "pattern": re.compile(r'\b(eval|exec)\s*\('),
-        },
-        {
-            "rule_id": "SEC-002",
-            "severity": "MEDIUM",
-            "message": "发现系统命令执行调用 (os.system/subprocess)",
-            "pattern": re.compile(r'\b(os\.system|subprocess\.Popen|subprocess\.run)\s*\('),
-        },
-        {
-            "rule_id": "SEC-003",
-            "severity": "HIGH",
-            "message": "发现硬编码的密码或密钥 (password/secret)",
-            "pattern": re.compile(r'(password|secret|api_key|token)\s*=\s*[\'"][a-zA-Z0-9_\-]{8,}[\'"]', re.IGNORECASE),
-        }
+    # 将 Windows 路径转换为 Docker 可识别的格式（如果路径含空格需加引号）
+    # workdir 形如 C:\Users\...\Temp\mcp_xxx，Docker 挂载时直接使用 Windows 路径即可
+    cmd = [
+        "docker", "run", "--rm",
+        "-v", f"{workdir}:/src",
+        "semgrep/semgrep",
+        "semgrep", "scan",
+        "--config=auto",
+        "--json",
+        "--quiet",
+        "/src"
     ]
 
-    # 遍历目录下的所有文件
-    for root, dirs, files in os.walk(workdir):
-        # 跳过 .git 等隐藏目录
-        dirs[:] = [d for d in dirs if not d.startswith('.')]
+    print(f"[静态审计] 执行命令: {' '.join(cmd)}")
 
-        for file in files:
-            if not file.endswith(('.py', '.js', '.ts', '.sh')):
-                continue
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if not result.stdout.strip():
+            print(f"[静态审计] 无标准输出，错误详情:\n{result.stderr[:500]}")
+            return [{"type": "tool_error", "tool": "semgrep", "message": "Docker 运行无 JSON 输出"}]
 
-            filepath = os.path.join(root, file)
-            rel_path = os.path.relpath(filepath, workdir)
+        data = json.loads(result.stdout)
+    except subprocess.TimeoutExpired:
+        return [{"type": "tool_error", "tool": "semgrep", "message": "扫描超时（300秒）"}]
+    except json.JSONDecodeError as e:
+        print(f"[静态审计] JSON 解析失败: {e}")
+        print(f"原始输出前 300 字: {result.stdout[:300]}")
+        return [{"type": "tool_error", "tool": "semgrep", "message": "输出不是合法 JSON"}]
+    except Exception as e:
+        return [{"type": "tool_error", "tool": "semgrep", "message": str(e)}]
 
-            try:
-                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-                    lines = f.readlines()
+    findings = []
+    for r in data.get("results", []):
+        # Docker 容器内路径以 /src 开头，需要替换掉以便和本地路径对应
+        file_path = r.get("path", "").replace("/src/", "")
+        findings.append({
+            "rule_id": r.get("check_id"),
+            "file": file_path,
+            "line": r.get("start", {}).get("line"),
+            "severity": r.get("extra", {}).get("severity", "INFO"),
+            "message": r.get("extra", {}).get("message", "无描述"),
+            "evidence": r.get("extra", {}).get("lines", "")[:200],
+            "source": "semgrep",
+            "type": "static_vuln"
+        })
 
-                for line_num, line in enumerate(lines, 1):
-                    # 忽略注释行（简单处理）
-                    if line.strip().startswith(('#', '//')):
-                        continue
-
-                    for rule in rules:
-                        if rule["pattern"].search(line):
-                            findings.append({
-                                "rule_id": rule["rule_id"],
-                                "file": rel_path,
-                                "line": line_num,
-                                "severity": rule["severity"],
-                                "message": rule["message"],
-                                "evidence": line.strip()[:100],
-                                "source": "builtin_audit",
-                                "type": "static_vuln"
-                            })
-            except Exception as e:
-                print(f"[静态审计] 读取文件失败 {rel_path}: {e}")
-
-    print(f"[静态审计] 扫描完成，发现 {len(findings)} 个代码问题。")
+    print(f"[静态审计] Semgrep(Docker) 扫描完成，发现 {len(findings)} 个问题。")
     return findings

@@ -27,8 +27,12 @@ def fetch_snapshot(repo_url):
         raise Exception(f"仓库拉取失败，请检查 URL 是否公开: {e.stderr.decode('utf-8', errors='ignore')}")
 
 
-@shared_task(bind=True, max_retries=2)
+@shared_task(bind=True, max_retries=0)
 def run_review(self, task_id, repo_url, ref, deploy_type):
+    print(f"\n=========================================")
+    print(f" [Celery] 接收到任务，Task ID: {task_id}")
+    print(f" [Celery] 仓库地址: {repo_url}")
+    print(f"=========================================\n")
     db = SessionLocal()
     task_record = None
     workdir = None
@@ -86,7 +90,7 @@ def run_review(self, task_id, repo_url, ref, deploy_type):
             task_record.result = {"error": str(exc)}
             db.commit()
         print(f"任务执行失败: {exc}")
-        raise self.retry(exc=exc, countdown=10)
+        #raise self.retry(exc=exc, countdown=10)
     finally:
         db.close()
         if workdir and os.path.exists(workdir):
