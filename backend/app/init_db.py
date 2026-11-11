@@ -1,6 +1,7 @@
 # init_db.py
-from models import init_db, engine
 from sqlalchemy import inspect
+
+from .database import engine, init_db
 
 
 def create_tables():

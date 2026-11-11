@@ -1,16 +1,17 @@
 # app/tasks.py
-from celery import shared_task
-from celery_app import celery
-from models import SessionLocal, ReviewTask
 import shutil
 import os
 import tempfile
 import subprocess
 
+from .celery_app import celery
+from .database import SessionLocal
+from .models import ReviewTask
+
 # 1. 导入所有检查模块（按照你的真实文件名）
-from checks.static_audit import static_audit
-from checks.dependency import dependency_check
-from checks.transport import transport_check
+from .checks.static_audit import static_audit
+from .checks.dependency import dependency_check
+from .checks.transport import transport_check
 
 
 # from checks.mcp_semantic import mcp_semantic_check # 如果还没写，先注释掉
@@ -27,7 +28,7 @@ def fetch_snapshot(repo_url):
         raise Exception(f"仓库拉取失败，请检查 URL 是否公开: {e.stderr.decode('utf-8', errors='ignore')}")
 
 
-@shared_task(bind=True, max_retries=0)
+@celery.task(bind=True, max_retries=0)
 def run_review(self, task_id, repo_url, ref, deploy_type):
     print(f"\n=========================================")
     print(f" [Celery] 接收到任务，Task ID: {task_id}")

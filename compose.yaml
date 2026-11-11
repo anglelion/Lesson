@@ -1,0 +1,87 @@
+x-backend-environment: &backend-environment
+  MCP_AUDIT_ENVIRONMENT: "${MCP_AUDIT_ENVIRONMENT:-development}"
+  MCP_AUDIT_DEBUG: "${MCP_AUDIT_DEBUG:-false}"
+  MCP_AUDIT_DATABASE_URL: "${MCP_AUDIT_DATABASE_URL:-postgresql+psycopg://postgres:postgres@postgres:5432/mcp_audit}"
+  MCP_AUDIT_REDIS_BROKER_URL: "${MCP_AUDIT_REDIS_BROKER_URL:-redis://redis:6379/0}"
+  MCP_AUDIT_REDIS_RESULT_URL: "${MCP_AUDIT_REDIS_RESULT_URL:-redis://redis:6379/1}"
+  MCP_AUDIT_TASK_TIME_LIMIT_SECONDS: "${MCP_AUDIT_TASK_TIME_LIMIT_SECONDS:-900}"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mcp_audit
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mcp_audit"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - redis-data:/data
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment: *backend-environment
+    command: ["alembic", "-c", "backend/alembic.ini", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment: *backend-environment
+    command: ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment: *backend-environment
+    command:
+      [
+        "celery",
+        "-A",
+        "backend.app.celery_app:celery",
+        "worker",
+        "--loglevel=INFO",
+        "--concurrency=2",
+      ]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:
+

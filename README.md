@@ -2,7 +2,7 @@
 
 一个面向 **MCP（Model Context Protocol）服务仓库** 的自动化安全审查原型。用户提交 Git 仓库地址后，系统通过 FastAPI 接收请求、PostgreSQL 持久化任务、Celery + Redis 异步执行审查流水线，最终输出风险发现（`findings`）与仲裁结论（`decision`）。
 
-> 当前仓库处于原型/脚手架阶段：`frontend/`、`backend/rules/` 为空目录，`requirement.txt` 未填写内容，部分检查模块为占位实现。详见「当前状态与待办」。
+> 当前处于 v0.1 工程基础建设阶段：依赖、环境配置、容器编排、健康检查和数据库迁移已经纳入工程结构；部分安全检查模块仍为后续版本的占位实现。
 
 ---
 
@@ -22,30 +22,36 @@
 
 | 组件 | 用途 | 配置位置 |
 | --- | --- | --- |
-| Python 3.10+ / FastAPI | HTTP API | [`main.py`](backend/app/main.py:9) |
+| Python 3.11+ / FastAPI | HTTP API | [`main.py`](backend/app/main.py) |
 | SQLAlchemy + PostgreSQL | 任务表 ORM | [`models.py`](backend/app/models.py:7) |
 | Celery + Redis | Broker `db0` / Backend `db1` | [`celery_app.py`](backend/app/celery_app.py:5) |
 | Semgrep（Docker 镜像） | 静态扫描 | [`static_audit.py`](backend/app/checks/static_audit.py:11) |
 | OSV.dev API | 依赖漏洞情报 | [`dependency.py`](backend/app/checks/dependency.py:7) |
 | Git CLI | 拉取仓库快照 | [`tasks.py`](backend/app/tasks.py:19) |
 
-> 依据代码推断的最小依赖：`fastapi`、`pydantic`、`sqlalchemy`、`psycopg2-binary`、`celery`、`redis`、`uvicorn`。当前 [`requirement.txt`](backend/requirement.txt:1) 为空，安装前需补全。
+Python 依赖和版本范围统一维护在 [`pyproject.toml`](pyproject.toml)，运行配置通过 `MCP_AUDIT_` 前缀的环境变量覆盖。
 
 ---
 
 ## 目录结构
 
 ```text
-PythonProject/
+Lesson/
+├── compose.yaml                    # PostgreSQL、Redis、迁移、API、Worker
+├── pyproject.toml                  # Python 项目元数据与依赖
+├── .env.example                    # 环境变量示例
 ├── README.md
 ├── backend/
-│   ├── requirement.txt              # 依赖清单（待补全）
-│   ├── rules/                       # 自定义 Semgrep 规则（预留，当前为空）
+│   ├── Dockerfile                   # API/Worker 共用镜像
+│   ├── alembic.ini                  # 数据库迁移配置
+│   ├── alembic/                     # 数据库迁移脚本
 │   └── app/
 │       ├── main.py                  # FastAPI 入口：/api/submit、/api/tasks/{id}
-│       ├── models.py                # ReviewTask 模型 + 建表
+│       ├── config.py                # 类型化环境配置
+│       ├── database.py              # 数据库连接与会话
+│       ├── models.py                # ReviewTask 模型
 │       ├── init_db.py               # 手动建表脚本
-│       ├── schemas.py               # 预留：Pydantic Schema
+│       ├── schemas.py               # API 请求与响应模型
 │       ├── evidence.py              # 预留：证据分级
 │       ├── decisions.py             # arbitrate() 仲裁逻辑
 │       ├── celery_app.py            # Celery 实例与序列化配置
@@ -57,71 +63,40 @@ PythonProject/
 │           ├── mcp_semantic.py      # MCP 语义检查（占位）
 │           ├── update_reiew.py      # 备用占位（文件名含拼写）
 │           └── utils.py             # fetch_snapshot / resolve_ref 工具
-└── frontend/                        # 前端（预留，当前为空）
 ```
 
 ---
 
 ## 环境准备
 
-### 1. 基础服务
+### 推荐：Docker Compose
 
 ```bash
-# PostgreSQL：库名 mcp_audit，账号/密码 postgres/postgres，端口 5432
-# 首次创建（容器名需与后续 docker exec 一致）：
-docker run -d --name mcp-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mcp_audit -p 5432:5432 postgres:16
-
-# Redis：6379
-docker run -d --name mcp-redis -p 6379:6379 redis:7
-
-# 之后每次重启直接 start 即可
-docker start mcp-redis
-docker start mcp-postgres
-
-# Semgrep 由代码自动 docker run，需本机 Docker 可用并可拉取 semgrep/semgrep
-docker pull semgrep/semgrep
-
-# 验证官方镜像可用（应输出 semgrep 版本号）
-docker run --rm semgrep/semgrep semgrep --version
+docker compose up --build
 ```
 
-数据库连接串硬编码在 [`models.py`](backend/app/models.py:7)，Redis 地址硬编码在 [`celery_app.py`](backend/app/celery_app.py:7)；如需改环境请直接修改或后续抽为环境变量。
+Compose 会启动 PostgreSQL、Redis、数据库迁移、API 和 Worker。默认值可直接用于本地开发；需要覆盖配置时，将 `.env.example` 复制为 `.env` 后修改。
 
-### 2. Python 依赖
+### 本地 Python 开发
 
 ```bash
-cd backend
-python -m pip install fastapi pydantic sqlalchemy psycopg2-binary celery redis uvicorn
+python -m pip install -e ".[dev]"
+alembic -c backend/alembic.ini upgrade head
 ```
-
-> 仓库已有 `.venv/`，也可激活后安装；建议同步把上述依赖写入 [`requirement.txt`](backend/requirement.txt:1)。
-
-### 3. 建表（可选）
-
-[`main.py`](backend/app/main.py:13) 启动时会自动 `init_db()`；也可手动执行：
-
-```bash
-cd backend/app
-python init_db.py
-```
-
----
 
 ## 启动
 
-所有命令均在 `backend/app` 目录下执行（源码使用 `from models import ...` 等顶层导入，需把该目录作为工作目录/PYTHONPATH）。
+在仓库根目录执行：
 
 ```bash
 # 终端 1：API
-cd backend/app
-python -m uvicorn main:app --reload
+python -m uvicorn backend.app.main:app --reload
 
 # 终端 2：Celery Worker
-cd backend/app
-python -m celery -A celery_app.celery worker --loglevel=info --pool=solo --include=tasks
+python -m celery -A backend.app.celery_app:celery worker --loglevel=info --pool=solo
 ```
 
-Windows 下建议使用 `--pool=solo` 避免 Celery 默认 prefork 的兼容问题；`--include=tasks` 确保 [`run_review()`](backend/app/tasks.py:31) 被 Worker 显式加载。
+Windows 本地运行 Worker 时建议使用 `--pool=solo`；容器内使用 Compose 已配置的并发参数。
 
 ---
 
@@ -130,18 +105,7 @@ Windows 下建议使用 `--pool=solo` 避免 Celery 默认 prefork 的兼容问�
 按顺序执行，完成一次「启动 → 提交 → 落库校验」闭环：
 
 ```bash
-# 1) 基础服务（已创建过容器时直接 start）
-docker start mcp-redis
-docker start mcp-postgres
-
-# 2) 验证 semgrep 官方镜像可用
-docker run --rm semgrep/semgrep semgrep --version
-
-# 3) 终端 1：FastAPI（在 backend/app 下）
-python -m uvicorn main:app --reload
-
-# 4) 终端 2：Celery Worker（在 backend/app 下）
-python -m celery -A celery_app.celery worker --loglevel=info --pool=solo --include=tasks
+docker compose up --build
 ```
 
 打开浏览器访问 **<http://127.0.0.1:8000/docs>**，找到 `POST /api/submit`，点击右侧 **"Try it out"**，将 Request body 改为：
@@ -160,7 +124,7 @@ python -m celery -A celery_app.celery worker --loglevel=info --pool=solo --inclu
 ### 查询数据库校验任务落库
 
 ```bash
-docker exec -it mcp-postgres psql -U postgres -d mcp_audit
+docker compose exec postgres psql -U postgres -d mcp_audit
 ```
 
 进入 `psql` 后执行：
@@ -171,7 +135,7 @@ SELECT id, repo_url, status, created_at FROM review_tasks;
 
 预期能看到刚提交的一行：`repo_url` 为 `https://gitee.com/mirrors/requests.git`，`status` 随流水线从 `pending` 变为 `running`、`success`（异常时为 `failed`），`created_at` 为提交时间。也可配合 `GET /api/tasks/{task_id}` 查看 `result` 中的 `findings` / `decision`。
 
-> 提示：`\q` 退出 `psql`；若容器尚未初始化过库表，[`main.py`](backend/app/main.py:13) 启动时会自动建表，或手动执行 [`init_db.py`](backend/app/init_db.py:1)。
+> 提示：`\q` 退出 `psql`；Compose 启动时会先运行 Alembic 数据库迁移。
 
 ---
 
@@ -249,8 +213,9 @@ FastAPI 自动生成交互式文档：`http://127.0.0.1:8000/docs`。
 
 ## 当前状态与待办
 
-- [ ] 补全 [`requirement.txt`](backend/requirement.txt:1)，固化版本并支持 `pip install -r`。
-- [ ] 将 PostgreSQL / Redis 连接配置改为环境变量，去掉硬编码。
+- [x] 使用 [`pyproject.toml`](pyproject.toml) 管理依赖和版本范围。
+- [x] 将 PostgreSQL / Redis 连接配置改为环境变量。
+- [x] 增加 Docker Compose、健康检查和 Alembic 数据库迁移基础。
 - [ ] 把 [`arbitrate()`](backend/app/decisions.py:2) 接入 [`tasks.py`](backend/app/tasks.py:73)，替换简易决策。
 - [ ] 实现 [`transport_check()`](backend/app/checks/transport.py:1)（TLS、Host 校验）与 [`mcp_semantic_check()`](backend/app/checks/mcp_semantic.py:1)（工具投毒、描述一致性）。
 - [ ] 填充 `backend/rules/` 自定义 MCP 规则，并在 Semgrep 命令中挂载（`--config=/rules`）。
