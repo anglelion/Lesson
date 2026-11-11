@@ -1,8 +1,12 @@
 """Run Semgrep Community Edition with registry and project-local rules."""
 
 import json
-from pathlib import Path
+import os
+import shutil
+import site
 import subprocess
+import sys
+from pathlib import Path
 
 from ..config import settings
 
@@ -11,13 +15,34 @@ class StaticAuditError(RuntimeError):
     """Raised when Semgrep cannot provide trustworthy scan output."""
 
 
+def _semgrep_executable() -> str:
+    """Resolve Semgrep even when a user-level scripts directory is not on PATH."""
+
+    executable = "semgrep.exe" if os.name == "nt" else "semgrep"
+    candidates = (
+        shutil.which("semgrep"),
+        str(Path(sys.executable).parent / executable),
+        str(
+            Path(site.getusersitepackages()).parent
+            / ("Scripts" if os.name == "nt" else "bin")
+            / executable
+        ),
+        str(Path(site.getuserbase()) / ("Scripts" if os.name == "nt" else "bin") / executable),
+    )
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return candidate
+    return "semgrep"
+
+
 def static_audit(workdir: str) -> list[dict]:
     rules_dir = Path(__file__).resolve().parents[2] / "rules"
+    semgrep = _semgrep_executable()
     command = [
-        "semgrep",
+        semgrep,
         "scan",
         "--config",
-        "auto",
+        "p/security-audit",
         "--config",
         str(rules_dir),
         "--json",
@@ -31,6 +56,9 @@ def static_audit(workdir: str) -> list[dict]:
         str(settings.semgrep_max_target_bytes),
         workdir,
     ]
+    environment = os.environ.copy()
+    executable_directory = str(Path(semgrep).resolve().parent)
+    environment["PATH"] = executable_directory + os.pathsep + environment.get("PATH", "")
 
     try:
         result = subprocess.run(
@@ -39,6 +67,7 @@ def static_audit(workdir: str) -> list[dict]:
             text=True,
             timeout=settings.semgrep_timeout_seconds,
             check=False,
+            env=environment,
         )
     except FileNotFoundError as exc:
         raise StaticAuditError("Semgrep executable is not installed") from exc

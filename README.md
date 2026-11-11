@@ -2,7 +2,7 @@
 
 一个面向 **MCP（Model Context Protocol）服务仓库** 的自动化安全审查原型。用户提交 Git 仓库地址后，系统通过 FastAPI 接收请求、PostgreSQL 持久化任务、Celery + Redis 异步执行审查流水线，最终输出风险发现（`findings`）与仲裁结论（`decision`）。
 
-> v0.1-v0.8 开发检查点已经完成，当前进入统一测试与修复阶段；通过最终验收前不标记为稳定版本。
+> v0.1-v0.8 开发检查点和统一验收均已完成，当前稳定版本为 v1.0.0。
 
 ---
 
@@ -10,13 +10,12 @@
 
 - **异步任务化审查**：提交即返回 `task_id`，后台 Worker 执行，前端可轮询结果。
 - **代码快照拉取**：`git clone --depth 1` 到临时目录，审查结束自动清理。
-- **静态审计**：运行 Semgrep Community Edition 的自动规则和项目本地规则，归一化规则 ID、文件、行号、严重级别与证据片段。
+- **静态审计**：运行 Semgrep Community Edition 的 `p/security-audit` 规则集和项目本地规则，归一化规则 ID、文件、行号、严重级别与证据片段。
 - **依赖漏洞检查**：解析 Python/Node.js 依赖与锁文件，批量调用 [OSV API](https://osv.dev/) 并补充漏洞详情和修复版本。
 - **敏感信息检查**：离线检测常见私钥和令牌模式，报告中始终隐藏实际凭据值。
 - **MCP 语义检查**：分析工具描述、输入/输出 Schema、行为注解和实现副作用，识别工具投毒与描述不一致。
 - **传输与隔离检查**：检查 HTTP/stdio 暴露、鉴权、Host、CORS 和明文通信，并限制不可信仓库的来源与资源占用。
-- **传输/授权检查**：预留 `transport_check(workdir, deploy_type)` 接口（`stdio` 默认部署类型）。
-- **决策仲裁**：独立模块 [`arbitrate()`](backend/app/decisions.py:2) 支持 `reject` / `manual_review` / `pass`；主流水线内置简易版「有发现即转人工」。
+- **决策仲裁**：独立模块 [`arbitrate()`](backend/app/decisions.py:2) 支持 `reject` / `manual_review` / `pass`，并根据证据等级、风险等级和扫描覆盖情况给出确定性结论。
 - **状态持久化**：`review_tasks` 表记录 `pending → running → success/failed` 及 JSON 结果。
 - **审查控制台**：同源 Web 页面支持任务提交、进度轮询、风险筛选、失败重试和 JSON/Markdown 报告下载。
 
@@ -56,17 +55,15 @@ Lesson/
 │       ├── models.py                # ReviewTask 模型
 │       ├── init_db.py               # 手动建表脚本
 │       ├── schemas.py               # API 请求与响应模型
-│       ├── evidence.py              # 预留：证据分级
+│       ├── evidence.py              # 证据归一化与分级
 │       ├── decisions.py             # arbitrate() 仲裁逻辑
 │       ├── celery_app.py            # Celery 实例与序列化配置
 │       ├── tasks.py                 # run_review 流水线编排
 │       └── checks/
 │           ├── static_audit.py      # Semgrep(Docker) 扫描
 │           ├── dependency.py        # OSV 依赖查询
-│           ├── transport.py         # 传输检查（占位）
-│           ├── mcp_semantic.py      # MCP 语义检查（占位）
-│           ├── update_reiew.py      # 备用占位（文件名含拼写）
-│           └── utils.py             # fetch_snapshot / resolve_ref 工具
+│           ├── transport.py         # 传输与部署方式检查
+│           └── mcp_semantic.py      # MCP 工具语义检查
 ```
 
 ---
@@ -209,7 +206,7 @@ FastAPI 自动生成交互式文档：`http://127.0.0.1:8000/docs`。
 1. 置状态为 `running/fetching`，精确获取请求的 branch、tag 或 commit；
 2. 保存解析后的不可变 commit SHA，切换状态为 `scanning`；
 3. 执行 Semgrep、依赖和传输检查，单个检查失败记录为 `tool_error`；
-4. 切换到 `arbitrating` 并生成当前阶段的简易结论；
+4. 切换到 `arbitrating`，按统一证据策略生成确定性结论；
 5. 保存结果、提交哈希和完成时间，状态置为 `success/completed`；
 6. 流水线异常进入有限重试，最终失败时保存错误和 `failed` 状态；
 7. 无论成功或失败，临时代码快照都会清理。
@@ -231,7 +228,7 @@ FastAPI 自动生成交互式文档：`http://127.0.0.1:8000/docs`。
 - [x] 实现 HTTP/stdio、TLS、Host、Origin 与授权配置检查。
 - [x] 限制仓库协议、主机、解析地址、大小、文件数和符号链接。
 - [x] 为 API/Worker 容器增加只读文件系统、能力移除和资源限制。
-- [x] 增加本地通用安全规则，并与 Semgrep 自动规则共同执行。
+- [x] 增加本地通用安全规则，并与 Semgrep `p/security-audit` 规则集共同执行。
 - [x] 增加敏感信息扫描，确保报告不回传实际凭据。
 - [x] 扩展 Python/Node.js 锁文件解析并使用 OSV 批量查询。
 - [x] 移除重复快照工具和拼写错误的占位模块。

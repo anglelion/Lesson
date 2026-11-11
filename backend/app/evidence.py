@@ -1,9 +1,9 @@
 """Normalized evidence and result contracts shared by every scanner."""
 
+import hashlib
 from collections import Counter
 from datetime import datetime
 from enum import StrEnum
-import hashlib
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -212,4 +212,3 @@ def summarize_findings(findings: list[Finding], tool_runs: list[ToolRun]) -> dic
             for run in tool_runs
         },
     }
-

@@ -4,7 +4,6 @@ from celery import Celery
 
 from .config import settings
 
-
 celery = Celery(
     "mcp_audit",
     broker=settings.redis_broker_url,
@@ -24,4 +23,3 @@ celery.conf.update(
     worker_prefetch_multiplier=1,
     task_time_limit=settings.task_time_limit_seconds,
 )
-

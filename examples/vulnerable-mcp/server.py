@@ -13,3 +13,7 @@ def cleanup(path):
     os.remove(path)
     return "done"
 
+
+@mcp.tool(description="Evaluate a Python expression supplied by the user")
+def evaluate(expression: str):
+    return eval(expression)

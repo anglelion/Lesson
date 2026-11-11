@@ -1,23 +1,33 @@
 """Static checks for MCP HTTP and stdio transport exposure."""
 
-from pathlib import Path
 import re
+from pathlib import Path
 from typing import Any
 
 from ..config import settings
 
-
 _TEXT_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx", ".json", ".toml", ".yaml", ".yml", ".env"}
 _SKIP_DIRECTORIES = {".git", ".venv", "venv", "node_modules", "vendor", "dist", "build"}
-_PUBLIC_BIND = re.compile(r"(?:host\s*[=:]\s*['\"]0\.0\.0\.0['\"]|--host\s+0\.0\.0\.0)", re.IGNORECASE)
+_PUBLIC_BIND = re.compile(
+    r"(?:host\s*[=:]\s*['\"]0\.0\.0\.0['\"]|--host\s+0\.0\.0\.0)", re.IGNORECASE
+)
 _CORS_WILDCARD = re.compile(r"(?:allow_origins|origin)\s*[=:]\s*\[?\s*['\"]\*['\"]", re.IGNORECASE)
-_CLEARTEXT_REMOTE = re.compile(r"http://(?!localhost\b|127\.0\.0\.1\b|\[::1\])[^\s'\"/]+", re.IGNORECASE)
-_NETWORK_SERVER = re.compile(r"(?:uvicorn\.run|app\.listen|server\.listen|createServer\s*\(|transport\s*=\s*['\"](?:sse|http|streamable_http))", re.IGNORECASE)
-_AUTH_SIGNAL = re.compile(r"(?:authorization|bearer|oauth|api[_-]?key|jwt|authmiddleware)", re.IGNORECASE)
+_CLEARTEXT_REMOTE = re.compile(
+    r"http://(?!localhost\b|127\.0\.0\.1\b|\[::1\])[^\s'\"/]+", re.IGNORECASE
+)
+_NETWORK_SERVER = re.compile(
+    r"(?:uvicorn\.run|app\.listen|server\.listen|createServer\s*\(|transport\s*=\s*['\"](?:sse|http|streamable_http))",
+    re.IGNORECASE,
+)
+_AUTH_SIGNAL = re.compile(
+    r"(?:authorization|bearer|oauth|api[_-]?key|jwt|authmiddleware)", re.IGNORECASE
+)
 _TRUSTED_HOST = re.compile(r"(?:TrustedHostMiddleware|allowedHosts|allowed_hosts|validateHost)")
 
 
-def _finding(rule_id: str, message: str, severity: str, file: str, line: int, evidence: str, remediation: str) -> dict[str, Any]:
+def _finding(
+    rule_id: str, message: str, severity: str, file: str, line: int, evidence: str, remediation: str
+) -> dict[str, Any]:
     return {
         "rule_id": rule_id,
         "type": "transport_security",
@@ -113,7 +123,8 @@ def transport_check(workdir: str, deploy_type: str) -> list[dict]:
                         relative,
                         _line(text, public_match.start()),
                         public_match.group(0),
-                        "Validate Host headers against an explicit allowlist to reduce DNS rebinding risk.",
+                        "Validate Host headers against an explicit allowlist to reduce "
+                        "DNS rebinding risk.",
                     )
                 )
 
@@ -127,7 +138,8 @@ def transport_check(workdir: str, deploy_type: str) -> list[dict]:
                     relative,
                     _line(text, server_match.start()),
                     server_match.group(0),
-                    "Remove the listener or submit the repository as an HTTP deployment for full review.",
+                    "Remove the listener or submit the repository as an HTTP deployment "
+                    "for full review.",
                 )
             )
 

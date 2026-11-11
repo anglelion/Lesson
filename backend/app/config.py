@@ -17,9 +17,7 @@ class Settings(BaseSettings):
     app_name: str = "MCP Audit"
     environment: str = "development"
     debug: bool = False
-    database_url: str = (
-        "postgresql+psycopg://postgres:postgres@localhost:5432/mcp_audit"
-    )
+    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/mcp_audit"
     redis_broker_url: str = "redis://localhost:6379/0"
     redis_result_url: str = "redis://localhost:6379/1"
     timezone: str = "Asia/Shanghai"
@@ -46,4 +44,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-

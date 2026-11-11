@@ -1,11 +1,10 @@
 """HTTP API for submitting and inspecting repository reviews."""
 
-from contextlib import asynccontextmanager
-from datetime import datetime
 import json
 import logging
-from pathlib import Path
 import uuid
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -14,6 +13,7 @@ from redis import Redis
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
+from .clock import utc_now
 from .config import settings
 from .database import SessionLocal, engine
 from .domain import ReviewStage, TaskStatus
@@ -21,7 +21,6 @@ from .models import ReviewTask
 from .schemas import HealthResponse, SubmitRequest, TaskAccepted, TaskListResponse, TaskResponse
 from .services.reports import render_markdown
 from .tasks import run_review
-
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +35,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.8.0",
+    version="1.0.0",
     debug=settings.debug,
     lifespan=lifespan,
 )
@@ -136,7 +135,7 @@ def submit(req: SubmitRequest) -> TaskAccepted:
                 task.status = TaskStatus.FAILED
                 task.stage = ReviewStage.FAILED
                 task.error = "Unable to dispatch background task"
-                task.finished_at = datetime.utcnow()
+                task.finished_at = utc_now()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Unable to dispatch review task",
@@ -175,10 +174,7 @@ def list_tasks(
     with SessionLocal() as db:
         total = db.scalar(select(func.count()).select_from(ReviewTask)) or 0
         tasks = db.scalars(
-            select(ReviewTask)
-            .order_by(ReviewTask.created_at.desc())
-            .offset(offset)
-            .limit(limit)
+            select(ReviewTask).order_by(ReviewTask.created_at.desc()).offset(offset).limit(limit)
         ).all()
     return TaskListResponse(
         items=[_task_response(task) for task in tasks],
@@ -214,13 +210,17 @@ def retry_task(task_id: str) -> TaskAccepted:
 
 
 @app.get("/api/tasks/{task_id}/report", tags=["reviews"])
-def download_report(task_id: str, format: str = Query(default="markdown", pattern="^(markdown|json)$")) -> Response:
+def download_report(
+    task_id: str, format: str = Query(default="markdown", pattern="^(markdown|json)$")
+) -> Response:
     with SessionLocal() as db:
         task = db.get(ReviewTask, task_id)
         if task is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
         if format == "json":
-            content = json.dumps(_task_response(task).model_dump(mode="json"), ensure_ascii=False, indent=2)
+            content = json.dumps(
+                _task_response(task).model_dump(mode="json"), ensure_ascii=False, indent=2
+            )
             return Response(
                 content=content,
                 media_type="application/json",
@@ -239,4 +239,3 @@ def frontend() -> FileResponse:
     if not index.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Frontend not installed")
     return FileResponse(index)
-

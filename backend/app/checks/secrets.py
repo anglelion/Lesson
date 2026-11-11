@@ -1,8 +1,8 @@
 """Offline credential-pattern scanner that never returns secret values."""
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
-import re
 
 from ..config import settings
 

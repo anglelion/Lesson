@@ -1,9 +1,9 @@
 """Celery orchestration for repository security reviews."""
 
-from datetime import datetime
 import logging
+from collections.abc import Callable
 from time import perf_counter
-from typing import Any, Callable
+from typing import Any
 
 from .celery_app import celery
 from .checks.dependency import dependency_check
@@ -11,6 +11,7 @@ from .checks.mcp_semantic import mcp_semantic_check
 from .checks.secrets import secret_check
 from .checks.static_audit import static_audit
 from .checks.transport import transport_check
+from .clock import utc_now
 from .config import settings
 from .database import SessionLocal
 from .decisions import arbitrate
@@ -25,7 +26,6 @@ from .evidence import (
 )
 from .models import ReviewTask
 from .services.repository import acquire_snapshot
-
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ def _execute_check(
     tool: str,
     check: Callable[[], list[dict]],
 ) -> tuple[list[Finding], ToolRun]:
-    started_at = datetime.utcnow()
+    started_at = utc_now()
     started_counter = perf_counter()
     try:
         raw_findings = check()
@@ -66,7 +66,7 @@ def _execute_check(
         ]
         status = ToolStatus.FAILED
 
-    finished_at = datetime.utcnow()
+    finished_at = utc_now()
     run = ToolRun(
         tool=tool,
         status=status,
@@ -112,7 +112,7 @@ def run_review(
             status=TaskStatus.RUNNING,
             stage=ReviewStage.FETCHING,
             error=None,
-            started_at=datetime.utcnow(),
+            started_at=utc_now(),
             finished_at=None,
         )
 
@@ -145,7 +145,7 @@ def run_review(
             stage=ReviewStage.COMPLETED,
             result=result,
             error=None,
-            finished_at=datetime.utcnow(),
+            finished_at=utc_now(),
         )
         return result
 
@@ -170,6 +170,6 @@ def run_review(
             status=TaskStatus.FAILED,
             stage=ReviewStage.FAILED,
             error=error_message,
-            finished_at=datetime.utcnow(),
+            finished_at=utc_now(),
         )
         raise

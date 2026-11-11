@@ -2,17 +2,19 @@
 
 import ast
 import json
-from pathlib import Path
 import re
+from pathlib import Path
 from typing import Any
 
 from ..config import settings
 
-
 _SKIP_DIRECTORIES = {".git", ".venv", "venv", "node_modules", "vendor", "dist", "build"}
 _INJECTION_PATTERNS = (
     re.compile(r"ignore (?:all |any )?(?:previous|prior) instructions", re.IGNORECASE),
-    re.compile(r"(?:reveal|print|return|expose).{0,30}(?:system prompt|secret|credential|token)", re.IGNORECASE),
+    re.compile(
+        r"(?:reveal|print|return|expose).{0,30}(?:system prompt|secret|credential|token)",
+        re.IGNORECASE,
+    ),
     re.compile(r"do not (?:tell|inform|show).{0,20}(?:user|human)", re.IGNORECASE),
     re.compile(r"must (?:always )?(?:call|invoke|use) this tool", re.IGNORECASE),
 )
@@ -84,7 +86,9 @@ class _BehaviorVisitor(ast.NodeVisitor):
                     mode = _literal(keyword.value)
             if isinstance(mode, str) and any(flag in mode for flag in ("w", "a", "x", "+")):
                 self.destructive = True
-        if name.endswith((".write_text", ".write_bytes", ".unlink", ".rmdir", ".rename", ".replace")):
+        if name.endswith(
+            (".write_text", ".write_bytes", ".unlink", ".rmdir", ".rename", ".replace")
+        ):
             self.file_access = True
             self.destructive = True
         if name.endswith((".read_text", ".read_bytes", ".open")):
@@ -159,7 +163,9 @@ def _python_tools(path: Path, root: Path) -> list[dict[str, Any]]:
             continue
 
         tool_name = str(_decorator_value(decorator, "name") or node.name)
-        description = str(_decorator_value(decorator, "description") or ast.get_docstring(node) or "")
+        description = str(
+            _decorator_value(decorator, "description") or ast.get_docstring(node) or ""
+        )
         lowered_description = description.lower()
         annotations = _annotation_map(decorator)
         visitor = _BehaviorVisitor()
@@ -175,7 +181,9 @@ def _python_tools(path: Path, root: Path) -> list[dict[str, Any]]:
                     file=relative,
                     line=node.lineno,
                     evidence=f"Tool decorator on function {node.name}",
-                    remediation="Describe the operation, side effects, data access, and confirmation needs.",
+                    remediation=(
+                        "Describe the operation, side effects, data access, and confirmation needs."
+                    ),
                 )
             )
 
@@ -185,12 +193,16 @@ def _python_tools(path: Path, root: Path) -> list[dict[str, Any]]:
                     _finding(
                         rule_id="mcp.tool.description-prompt-injection",
                         finding_type="tool_poisoning",
-                        message=f"MCP tool '{tool_name}' description contains prompt-injection language",
+                        message=(
+                            f"MCP tool '{tool_name}' description contains prompt-injection language"
+                        ),
                         severity="CRITICAL",
                         file=relative,
                         line=node.lineno,
                         evidence=description,
-                        remediation="Remove instructions aimed at controlling the model or hiding behavior.",
+                        remediation=(
+                            "Remove instructions aimed at controlling the model or hiding behavior."
+                        ),
                     )
                 )
                 break
@@ -227,12 +239,18 @@ def _python_tools(path: Path, root: Path) -> list[dict[str, Any]]:
                 _finding(
                     rule_id="mcp.tool.undisclosed-side-effect",
                     finding_type="description_mismatch",
-                    message=f"MCP tool '{tool_name}' performs side effects not disclosed in its description",
+                    message=(
+                        f"MCP tool '{tool_name}' performs side effects not disclosed "
+                        "in its description"
+                    ),
                     severity="HIGH",
                     file=relative,
                     line=node.lineno,
                     evidence=f"Observed calls: {', '.join(sorted(visitor.calls))}",
-                    remediation="Explicitly describe writes, deletion, command execution, or external actions.",
+                    remediation=(
+                        "Explicitly describe writes, deletion, command execution, "
+                        "or external actions."
+                    ),
                 )
             )
         if visitor.network and not (_NETWORK_WORDS & set(lowered_description.split())):
@@ -240,12 +258,18 @@ def _python_tools(path: Path, root: Path) -> list[dict[str, Any]]:
                 _finding(
                     rule_id="mcp.tool.undisclosed-network-access",
                     finding_type="description_mismatch",
-                    message=f"MCP tool '{tool_name}' performs network access not disclosed in its description",
+                    message=(
+                        f"MCP tool '{tool_name}' performs network access not disclosed "
+                        "in its description"
+                    ),
                     severity="MEDIUM",
                     file=relative,
                     line=node.lineno,
                     evidence=f"Observed calls: {', '.join(sorted(visitor.calls))}",
-                    remediation="Disclose remote services, transmitted data, and authorization requirements.",
+                    remediation=(
+                        "Disclose remote services, transmitted data, and "
+                        "authorization requirements."
+                    ),
                 )
             )
         if visitor.file_access and not (_FILE_WORDS & set(lowered_description.split())):
@@ -258,7 +282,9 @@ def _python_tools(path: Path, root: Path) -> list[dict[str, Any]]:
                     file=relative,
                     line=node.lineno,
                     evidence=f"Observed calls: {', '.join(sorted(visitor.calls))}",
-                    remediation="Describe the file scope and whether data is read, created, or modified.",
+                    remediation=(
+                        "Describe the file scope and whether data is read, created, or modified."
+                    ),
                 )
             )
 
@@ -300,7 +326,9 @@ def _manifest_tools(value: Any, file: str, findings: list[dict[str, Any]]) -> No
                         file=file,
                         line=1,
                         evidence="inputSchema must be a valid JSON Schema object",
-                        remediation="Use an object JSON Schema and explicitly declare accepted properties.",
+                        remediation=(
+                            "Use an object JSON Schema and explicitly declare accepted properties."
+                        ),
                         level="confirmed",
                     )
                 )
@@ -314,7 +342,9 @@ def _manifest_tools(value: Any, file: str, findings: list[dict[str, Any]]) -> No
                         file=file,
                         line=1,
                         evidence="inputSchema does not set additionalProperties=false",
-                        remediation="Reject undeclared properties unless the open object is intentional.",
+                        remediation=(
+                            "Reject undeclared properties unless the open object is intentional."
+                        ),
                     )
                 )
             output_schema = value.get("outputSchema")
@@ -340,12 +370,16 @@ def _manifest_tools(value: Any, file: str, findings: list[dict[str, Any]]) -> No
                         _finding(
                             rule_id="mcp.tool.description-prompt-injection",
                             finding_type="tool_poisoning",
-                            message=f"MCP tool '{name}' description contains prompt-injection language",
+                            message=(
+                                f"MCP tool '{name}' description contains prompt-injection language"
+                            ),
                             severity="CRITICAL",
                             file=file,
                             line=1,
                             evidence=description,
-                            remediation="Remove instructions aimed at controlling the model or user.",
+                            remediation=(
+                                "Remove instructions aimed at controlling the model or user."
+                            ),
                         )
                     )
                     break
@@ -389,7 +423,9 @@ def _javascript_tools(path: Path, root: Path) -> list[dict[str, Any]]:
                     file=path.relative_to(root).as_posix(),
                     line=source.count("\n", 0, match.start()) + 1,
                     evidence=match.group(0),
-                    remediation="Remove instructions aimed at controlling the model or hiding behavior.",
+                    remediation=(
+                        "Remove instructions aimed at controlling the model or hiding behavior."
+                    ),
                 )
             )
             break
@@ -400,7 +436,9 @@ def mcp_semantic_check(workdir: str) -> list[dict]:
     root = Path(workdir).resolve()
     findings: list[dict[str, Any]] = []
     for path in root.rglob("*"):
-        if not path.is_file() or any(part in _SKIP_DIRECTORIES for part in path.relative_to(root).parts):
+        if not path.is_file() or any(
+            part in _SKIP_DIRECTORIES for part in path.relative_to(root).parts
+        ):
             continue
         try:
             if path.stat().st_size > settings.semgrep_max_target_bytes:

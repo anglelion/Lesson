@@ -1,16 +1,16 @@
 """Parse locked Python and Node.js dependencies and query OSV in batches."""
 
-from dataclasses import dataclass
 import json
-from pathlib import Path
 import tomllib
-from typing import Any, Iterable
+from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 import httpx
 from packaging.requirements import InvalidRequirement, Requirement
 
 from ..config import settings
-
 
 OSV_BATCH_API = "https://api.osv.dev/v1/querybatch"
 OSV_VULN_API = "https://api.osv.dev/v1/vulns"
@@ -51,9 +51,7 @@ def _parse_requirement_strings(
             continue
         version = _exact_version(requirement)
         if version:
-            dependencies.append(
-                Dependency(requirement.name, version, "PyPI", source_file)
-            )
+            dependencies.append(Dependency(requirement.name, version, "PyPI", source_file))
     return dependencies
 
 
@@ -180,7 +178,9 @@ def parse_dependencies(workdir: str) -> list[Dependency]:
         (dependency.ecosystem, dependency.name.lower(), dependency.version): dependency
         for dependency in dependencies
     }
-    result = sorted(unique.values(), key=lambda item: (item.ecosystem, item.name.lower(), item.version))
+    result = sorted(
+        unique.values(), key=lambda item: (item.ecosystem, item.name.lower(), item.version)
+    )
     if len(result) > settings.dependency_limit:
         raise DependencyCheckError(
             f"Dependency count {len(result)} exceeds limit {settings.dependency_limit}"
@@ -199,7 +199,9 @@ def _severity(vulnerability: dict[str, Any]) -> str:
             return "MEDIUM" if normalized == "MODERATE" else normalized
 
     for affected in vulnerability.get("affected") or []:
-        normalized = str(((affected or {}).get("ecosystem_specific") or {}).get("severity") or "").upper()
+        normalized = str(
+            ((affected or {}).get("ecosystem_specific") or {}).get("severity") or ""
+        ).upper()
         if normalized in {"LOW", "MEDIUM", "MODERATE", "HIGH", "CRITICAL"}:
             return "MEDIUM" if normalized == "MODERATE" else normalized
 

@@ -42,7 +42,8 @@ def render_markdown(task: ReviewTask) -> str:
                 "",
                 str(finding.get("message") or "No description"),
                 "",
-                f"Remediation: {finding.get('remediation') or 'Review and remediate as appropriate.'}",
+                "Remediation: "
+                f"{finding.get('remediation') or 'Review and remediate as appropriate.'}",
                 "",
             ]
         )

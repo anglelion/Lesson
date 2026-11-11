@@ -1,15 +1,15 @@
 """Acquire an exact, temporary Git repository snapshot."""
 
-from collections.abc import Iterator
-from contextlib import contextmanager
-from dataclasses import dataclass
 import ipaddress
 import os
-from pathlib import Path
 import shutil
 import socket
 import subprocess
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlparse
 
 from ..config import settings
@@ -51,8 +51,7 @@ def _validate_repository_url(value: str) -> str:
 
     try:
         addresses = {
-            item[4][0]
-            for item in socket.getaddrinfo(hostname, 443, type=socket.SOCK_STREAM)
+            item[4][0] for item in socket.getaddrinfo(hostname, 443, type=socket.SOCK_STREAM)
         }
     except socket.gaierror as exc:
         raise RepositoryError("Repository hostname could not be resolved") from exc
