@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MCP Audit</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <header class="shell header">
+      <div>
+        <p class="eyebrow">MCP REPOSITORY SECURITY</p>
+        <h1>MCP Audit</h1>
+        <p class="subtitle">提交一个确定版本的仓库，获得可解释、可追踪的安全审查结论。</p>
+      </div>
+      <a class="quiet-link" href="/docs">API 文档</a>
+    </header>
+
+    <main class="shell layout">
+      <section class="panel submit-panel" aria-labelledby="submit-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">NEW REVIEW</p>
+            <h2 id="submit-title">发起审查</h2>
+          </div>
+          <span class="status-dot">异步执行</span>
+        </div>
+        <form id="review-form">
+          <label>仓库 HTTPS 地址<input id="repo-url" name="repo_url" type="url" required placeholder="https://github.com/org/repository.git" /></label>
+          <div class="form-grid">
+            <label>分支、标签或提交<input id="repo-ref" name="ref" required value="HEAD" /></label>
+            <label>部署方式<select id="deploy-type" name="deploy_type"><option value="stdio">stdio</option><option value="http">HTTP</option></select></label>
+          </div>
+          <label>说明<textarea id="description" name="description" rows="3" placeholder="可选：说明仓库用途或审查重点"></textarea></label>
+          <button class="primary" type="submit">开始安全审查</button>
+          <p id="form-message" class="message" role="status"></p>
+        </form>
+      </section>
+
+      <section class="panel tasks-panel" aria-labelledby="tasks-title">
+        <div class="section-heading">
+          <div><p class="eyebrow">RECENT RUNS</p><h2 id="tasks-title">最近任务</h2></div>
+          <button id="refresh" class="secondary" type="button">刷新</button>
+        </div>
+        <div id="task-list" class="task-list" aria-live="polite"></div>
+      </section>
+
+      <section id="detail-panel" class="panel detail-panel hidden" aria-labelledby="detail-title">
+        <div class="section-heading">
+          <div><p class="eyebrow">REVIEW DETAIL</p><h2 id="detail-title">审查详情</h2></div>
+          <div class="actions"><a id="download-md" class="secondary" href="#">Markdown</a><a id="download-json" class="secondary" href="#">JSON</a></div>
+        </div>
+        <div id="task-overview" class="overview"></div>
+        <div class="filter-row">
+          <label>风险等级<select id="severity-filter"><option value="all">全部</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="info">Info</option></select></label>
+          <button id="retry" class="secondary hidden" type="button">重新执行</button>
+        </div>
+        <div id="findings" class="findings"></div>
+      </section>
+    </main>
+    <script src="/assets/app.js" defer></script>
+  </body>
+</html>

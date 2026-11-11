@@ -35,6 +35,13 @@ class TaskResponse(BaseModel):
     finished_at: datetime | None
 
 
+class TaskListResponse(BaseModel):
+    items: list[TaskResponse]
+    total: int
+    limit: int
+    offset: int
+
+
 class HealthResponse(BaseModel):
     status: str
     service: str

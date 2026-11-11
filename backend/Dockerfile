@@ -12,6 +12,7 @@ RUN apt-get update \
 
 COPY pyproject.toml README.md ./
 COPY backend ./backend
+COPY frontend ./frontend
 
 RUN python -m pip install --no-cache-dir .
 

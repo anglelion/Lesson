@@ -18,6 +18,7 @@
 - **传输/授权检查**：预留 `transport_check(workdir, deploy_type)` 接口（`stdio` 默认部署类型）。
 - **决策仲裁**：独立模块 [`arbitrate()`](backend/app/decisions.py:2) 支持 `reject` / `manual_review` / `pass`；主流水线内置简易版「有发现即转人工」。
 - **状态持久化**：`review_tasks` 表记录 `pending → running → success/failed` 及 JSON 结果。
+- **审查控制台**：同源 Web 页面支持任务提交、进度轮询、风险筛选、失败重试和 JSON/Markdown 报告下载。
 
 ---
 
@@ -112,6 +113,8 @@ docker compose up --build
 ```
 
 打开浏览器访问 **<http://127.0.0.1:8000/docs>**，找到 `POST /api/submit`，点击右侧 **"Try it out"**，将 Request body 改为：
+
+也可以直接访问 **<http://127.0.0.1:8000/>** 使用审查控制台。
 
 ```json
 {
@@ -232,7 +235,8 @@ FastAPI 自动生成交互式文档：`http://127.0.0.1:8000/docs`。
 - [x] 增加敏感信息扫描，确保报告不回传实际凭据。
 - [x] 扩展 Python/Node.js 锁文件解析并使用 OSV 批量查询。
 - [x] 移除重复快照工具和拼写错误的占位模块。
-- [ ] 补充 `frontend/` 页面与单元测试；`GET /api/tasks` 未找到时建议返回 404 而非 `{"error": ...}`。
+- [x] 增加任务列表、详情、失败重试、报告导出和同源审查控制台。
+- [ ] 在最终统一验证阶段补充单元、集成与端到端测试。
 - [ ] 为 OSV 查询、Semgrep 和大仓库补充更细粒度限流与覆盖记录。
 
 ---
