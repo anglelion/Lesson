@@ -1,98 +1,151 @@
-# app/tasks.py
-import shutil
-import os
-import tempfile
-import subprocess
+"""Celery orchestration for repository security reviews."""
+
+from datetime import datetime
+import logging
+from typing import Any
 
 from .celery_app import celery
-from .database import SessionLocal
-from .models import ReviewTask
-
-# 1. 导入所有检查模块（按照你的真实文件名）
-from .checks.static_audit import static_audit
 from .checks.dependency import dependency_check
+from .checks.static_audit import static_audit
 from .checks.transport import transport_check
+from .config import settings
+from .database import SessionLocal
+from .domain import ReviewStage, TaskStatus
+from .models import ReviewTask
+from .services.repository import acquire_snapshot
 
 
-# from checks.mcp_semantic import mcp_semantic_check # 如果还没写，先注释掉
-# from checks.update_review import update_review # 如果还没写，先注释掉
+logger = logging.getLogger(__name__)
 
-def fetch_snapshot(repo_url):
-    """下载 Github 仓库到临时目录"""
-    temp_dir = tempfile.mkdtemp(prefix="mcp_")
-    print(f"正在克隆代码: {repo_url} -> {temp_dir}")
+
+def _update_task(task_id: str, **changes: Any) -> None:
+    with SessionLocal.begin() as db:
+        task = db.get(ReviewTask, task_id)
+        if task is None:
+            raise LookupError(f"Review task {task_id} does not exist")
+        for field, value in changes.items():
+            setattr(task, field, value)
+
+
+def _run_checks(workdir: str, deploy_type: str) -> list[dict]:
+    findings: list[dict] = []
+
     try:
-        subprocess.run(["git", "clone", "--depth", "1", repo_url, temp_dir], check=True, capture_output=True)
-        return temp_dir
-    except subprocess.CalledProcessError as e:
-        raise Exception(f"仓库拉取失败，请检查 URL 是否公开: {e.stderr.decode('utf-8', errors='ignore')}")
+        findings.extend(static_audit(workdir))
+    except Exception as exc:
+        logger.exception("Static audit failed")
+        findings.append(
+            {
+                "type": "tool_error",
+                "tool": "semgrep",
+                "message": str(exc),
+            }
+        )
 
-
-@celery.task(bind=True, max_retries=0)
-def run_review(self, task_id, repo_url, ref, deploy_type):
-    print(f"\n=========================================")
-    print(f" [Celery] 接收到任务，Task ID: {task_id}")
-    print(f" [Celery] 仓库地址: {repo_url}")
-    print(f"=========================================\n")
-    db = SessionLocal()
-    task_record = None
-    workdir = None
     try:
-        task_record = db.query(ReviewTask).filter(ReviewTask.id == task_id).first()
-        if task_record:
-            task_record.status = "running"
-            db.commit()
+        findings.extend(dependency_check(workdir))
+    except Exception as exc:
+        logger.exception("Dependency audit failed")
+        findings.append(
+            {
+                "type": "tool_error",
+                "tool": "osv",
+                "message": str(exc),
+            }
+        )
 
-        # 1. 下载真实代码
-        workdir = fetch_snapshot(repo_url)
+    try:
+        findings.extend(transport_check(workdir, deploy_type))
+    except Exception as exc:
+        logger.exception("Transport audit failed")
+        findings.append(
+            {
+                "type": "tool_error",
+                "tool": "transport",
+                "message": str(exc),
+            }
+        )
 
-        findings = []
+    return findings
 
-        # 2. 静态审计 (Semgrep)
-        try:
-            print("执行静态审计...")
-            findings += static_audit(workdir)
-        except Exception as e:
-            print(f"静态审计报错: {e}")
-            findings.append({"type": "tool_error", "tool": "semgrep", "message": str(e)})
 
-        # 3. 依赖检查 (OSV)
-        try:
-            print("执行依赖检查...")
-            findings += dependency_check(workdir)
-        except Exception as e:
-            print(f"依赖检查报错: {e}")
+@celery.task(bind=True, max_retries=2, name="mcp_audit.run_review")
+def run_review(
+    self,
+    task_id: str,
+    repo_url: str,
+    requested_ref: str,
+    deploy_type: str,
+) -> dict:
+    """Acquire the exact requested revision, scan it, and persist the outcome."""
 
-        # 4. 传输与授权检查（目前返回空，但流程打通）
-        try:
-            print("执行传输检查...")
-            findings += transport_check(workdir, deploy_type)
-        except Exception as e:
-            print(f"传输检查报错: {e}")
+    try:
+        _update_task(
+            task_id,
+            status=TaskStatus.RUNNING,
+            stage=ReviewStage.FETCHING,
+            error=None,
+            started_at=datetime.utcnow(),
+            finished_at=None,
+        )
 
-        # 5. 决策仲裁（简易版：有发现就转人工复核）
-        decision = {"decision": "pass", "reason": "无风险"}
-        if len(findings) > 0:
-            decision = {"decision": "manual_review", "reason": f"发现 {len(findings)} 个问题"}
+        with acquire_snapshot(
+            repo_url=repo_url,
+            requested_ref=requested_ref,
+            timeout_seconds=settings.clone_timeout_seconds,
+        ) as snapshot:
+            _update_task(
+                task_id,
+                resolved_commit=snapshot.commit_sha,
+                stage=ReviewStage.SCANNING,
+            )
+            findings = _run_checks(str(snapshot.path), deploy_type)
 
-        # 6. 结果写入数据库
-        if task_record:
-            task_record.status = "success"
-            task_record.result = {"findings": findings, "decision": decision}
-            db.commit()
+        _update_task(task_id, stage=ReviewStage.ARBITRATING)
+        decision = {"decision": "pass", "reason": "No findings"}
+        if findings:
+            decision = {
+                "decision": "manual_review",
+                "reason": f"Review produced {len(findings)} finding(s)",
+            }
 
-        print(f"审查完成，共发现 {len(findings)} 个问题。结论: {decision['decision']}")
-        return {"findings": findings, "decision": decision}
+        result = {
+            "requested_ref": requested_ref,
+            "resolved_commit": snapshot.commit_sha,
+            "findings": findings,
+            "decision": decision,
+        }
+        _update_task(
+            task_id,
+            status=TaskStatus.SUCCESS,
+            stage=ReviewStage.COMPLETED,
+            result=result,
+            error=None,
+            finished_at=datetime.utcnow(),
+        )
+        return result
 
     except Exception as exc:
-        db.rollback()
-        if task_record:
-            task_record.status = "failed"
-            task_record.result = {"error": str(exc)}
-            db.commit()
-        print(f"任务执行失败: {exc}")
-        #raise self.retry(exc=exc, countdown=10)
-    finally:
-        db.close()
-        if workdir and os.path.exists(workdir):
-            shutil.rmtree(workdir, ignore_errors=True)
+        error_message = f"{type(exc).__name__}: {exc}"[:4000]
+        logger.exception("Review task %s failed", task_id)
+
+        if self.request.retries < self.max_retries:
+            _update_task(
+                task_id,
+                status=TaskStatus.PENDING,
+                stage=ReviewStage.RETRYING,
+                error=error_message,
+            )
+            raise self.retry(
+                exc=exc,
+                countdown=settings.task_retry_delay_seconds,
+            )
+
+        _update_task(
+            task_id,
+            status=TaskStatus.FAILED,
+            stage=ReviewStage.FAILED,
+            error=error_message,
+            finished_at=datetime.utcnow(),
+        )
+        raise

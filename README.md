@@ -198,14 +198,15 @@ FastAPI 自动生成交互式文档：`http://127.0.0.1:8000/docs`。
 
 ## 审查流水线
 
-[`run_review()`](backend/app/tasks.py:31) 顺序如下：
+[`run_review()`](backend/app/tasks.py) 顺序如下：
 
-1. 置状态 `running` → [`fetch_snapshot()`](backend/app/tasks.py:19) 克隆到临时目录；
-2. [`static_audit()`](backend/app/checks/static_audit.py:6)：Semgrep 扫描，异常降级为 `tool_error` 发现项；
-3. [`dependency_check()`](backend/app/checks/dependency.py:59)：解析固定版本 → OSV 查询；
-4. [`transport_check()`](backend/app/checks/transport.py:1)：当前返回空；
-5. 汇总 `findings`，生成 `decision`，写回 `review_tasks.result`，状态置 `success`；
-6. `finally` 关闭会话并 `shutil.rmtree` 清理临时目录；异常则置 `failed` 并记录 `error`。
+1. 置状态为 `running/fetching`，精确获取请求的 branch、tag 或 commit；
+2. 保存解析后的不可变 commit SHA，切换状态为 `scanning`；
+3. 执行 Semgrep、依赖和传输检查，单个检查失败记录为 `tool_error`；
+4. 切换到 `arbitrating` 并生成当前阶段的简易结论；
+5. 保存结果、提交哈希和完成时间，状态置为 `success/completed`；
+6. 流水线异常进入有限重试，最终失败时保存错误和 `failed` 状态；
+7. 无论成功或失败，临时代码快照都会清理。
 
 独立仲裁模块 [`decisions.py`](backend/app/decisions.py:2) 提供更严格策略（已确认 CRITICAL / 工具投毒 → `reject`，HIGH 未确认或工具报错 → `manual_review`），目前尚未接入主流水线。
 
@@ -216,14 +217,15 @@ FastAPI 自动生成交互式文档：`http://127.0.0.1:8000/docs`。
 - [x] 使用 [`pyproject.toml`](pyproject.toml) 管理依赖和版本范围。
 - [x] 将 PostgreSQL / Redis 连接配置改为环境变量。
 - [x] 增加 Docker Compose、健康检查和 Alembic 数据库迁移基础。
+- [x] 让 `ref` 真正控制 branch、tag 或 commit，并保存解析后的 commit SHA。
+- [x] 增加任务阶段、时间戳、错误、有限重试和可靠失败状态。
 - [ ] 把 [`arbitrate()`](backend/app/decisions.py:2) 接入 [`tasks.py`](backend/app/tasks.py:73)，替换简易决策。
 - [ ] 实现 [`transport_check()`](backend/app/checks/transport.py:1)（TLS、Host 校验）与 [`mcp_semantic_check()`](backend/app/checks/mcp_semantic.py:1)（工具投毒、描述一致性）。
 - [ ] 填充 `backend/rules/` 自定义 MCP 规则，并在 Semgrep 命令中挂载（`--config=/rules`）。
 - [ ] 填充 `schemas.py` / `evidence.py`，统一发现项字段（注意 `dependency.py` 中 `evidence_level` 现为「已确认」中文，与仲裁模块期望的 `confirmed` 不一致）。
-- [ ] `ref` 参数目前未参与 clone（仅 `--depth 1` 拉默认分支），可结合 [`resolve_ref()`](backend/app/checks/utils.py:28) 实现指定分支/commit。
 - [ ] 修正 [`update_reiew.py`](backend/app/checks/update_reiew.py:1) 文件名拼写，移除重复占位函数。
 - [ ] 补充 `frontend/` 页面与单元测试；`GET /api/tasks` 未找到时建议返回 404 而非 `{"error": ...}`。
-- [ ] 为 OSV 查询、Semgrep 超时、大仓库克隆补充重试/限流与更细粒度日志。
+- [ ] 为 OSV 查询、Semgrep 和大仓库补充更细粒度限流与覆盖记录。
 
 ---
 

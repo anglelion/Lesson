@@ -16,13 +16,23 @@ class SubmitRequest(BaseModel):
 class TaskAccepted(BaseModel):
     task_id: str
     status: Literal["pending"]
+    stage: Literal["queued"]
 
 
 class TaskResponse(BaseModel):
     task_id: str
+    repo_url: str
+    requested_ref: str
+    resolved_commit: str | None
+    deploy_type: str
     status: str
+    stage: str
     result: dict[str, Any] | None
+    error: str | None
     created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    finished_at: datetime | None
 
 
 class HealthResponse(BaseModel):

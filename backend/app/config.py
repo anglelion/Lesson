@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     redis_result_url: str = "redis://localhost:6379/1"
     timezone: str = "Asia/Shanghai"
     task_time_limit_seconds: int = 900
+    clone_timeout_seconds: int = 180
+    task_retry_delay_seconds: int = 15
 
 
 def get_settings() -> Settings:
