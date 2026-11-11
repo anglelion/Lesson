@@ -12,7 +12,7 @@ final verification and repair pass succeeds.
 | v0.3 | Normalized evidence and decision arbitration | Complete |
 | v0.4 | Static, secret, and dependency security checks | Complete |
 | v0.5 | MCP-specific semantic security checks | Complete |
-| v0.6 | Transport checks and untrusted-repository isolation | Planned |
+| v0.6 | Transport checks and untrusted-repository isolation | Complete |
 | v0.7 | API completion, frontend, progress, and reports | Planned |
 | v0.8 | Deployment packaging, documentation, and demo fixtures | Planned |
 | v1.0.0 | Unified test, repair, acceptance, and release | Blocked by v0.1-v0.8 |

@@ -14,6 +14,7 @@
 - **依赖漏洞检查**：解析 Python/Node.js 依赖与锁文件，批量调用 [OSV API](https://osv.dev/) 并补充漏洞详情和修复版本。
 - **敏感信息检查**：离线检测常见私钥和令牌模式，报告中始终隐藏实际凭据值。
 - **MCP 语义检查**：分析工具描述、输入/输出 Schema、行为注解和实现副作用，识别工具投毒与描述不一致。
+- **传输与隔离检查**：检查 HTTP/stdio 暴露、鉴权、Host、CORS 和明文通信，并限制不可信仓库的来源与资源占用。
 - **传输/授权检查**：预留 `transport_check(workdir, deploy_type)` 接口（`stdio` 默认部署类型）。
 - **决策仲裁**：独立模块 [`arbitrate()`](backend/app/decisions.py:2) 支持 `reject` / `manual_review` / `pass`；主流水线内置简易版「有发现即转人工」。
 - **状态持久化**：`review_tasks` 表记录 `pending → running → success/failed` 及 JSON 结果。
@@ -224,7 +225,9 @@ FastAPI 自动生成交互式文档：`http://127.0.0.1:8000/docs`。
 - [x] 统一发现项、证据等级、工具运行记录和结果摘要格式。
 - [x] 把 [`arbitrate()`](backend/app/decisions.py) 接入任务流水线。
 - [x] 实现 MCP 工具投毒、描述一致性、注解矛盾和 Schema 检查。
-- [ ] 实现 [`transport_check()`](backend/app/checks/transport.py)（TLS、Host、Origin 与授权配置）。
+- [x] 实现 HTTP/stdio、TLS、Host、Origin 与授权配置检查。
+- [x] 限制仓库协议、主机、解析地址、大小、文件数和符号链接。
+- [x] 为 API/Worker 容器增加只读文件系统、能力移除和资源限制。
 - [x] 增加本地通用安全规则，并与 Semgrep 自动规则共同执行。
 - [x] 增加敏感信息扫描，确保报告不回传实际凭据。
 - [x] 扩展 Python/Node.js 锁文件解析并使用 OSV 批量查询。

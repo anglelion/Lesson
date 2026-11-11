@@ -13,6 +13,12 @@ x-backend-environment: &backend-environment
   MCP_AUDIT_OSV_TIMEOUT_SECONDS: "${MCP_AUDIT_OSV_TIMEOUT_SECONDS:-20}"
   MCP_AUDIT_DEPENDENCY_LIMIT: "${MCP_AUDIT_DEPENDENCY_LIMIT:-5000}"
   MCP_AUDIT_SECRET_SCAN_MAX_FILE_BYTES: "${MCP_AUDIT_SECRET_SCAN_MAX_FILE_BYTES:-2000000}"
+  MCP_AUDIT_ALLOWED_REPO_HOSTS: '${MCP_AUDIT_ALLOWED_REPO_HOSTS:-["github.com","gitee.com","gitlab.com"]}'
+  MCP_AUDIT_REPOSITORY_MAX_BYTES: "${MCP_AUDIT_REPOSITORY_MAX_BYTES:-250000000}"
+  MCP_AUDIT_REPOSITORY_MAX_FILES: "${MCP_AUDIT_REPOSITORY_MAX_FILES:-50000}"
+  HOME: /tmp
+  XDG_CACHE_HOME: /tmp/.cache
+  SEMGREP_SETTINGS_FILE: /tmp/semgrep-settings.yml
 
 services:
   postgres:
@@ -58,6 +64,13 @@ services:
     command: ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8000/health/live"]
       interval: 10s
@@ -83,6 +96,16 @@ services:
         "--loglevel=INFO",
         "--concurrency=2",
       ]
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g,exec
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 2.0
     depends_on:
       migrate:
         condition: service_completed_successfully

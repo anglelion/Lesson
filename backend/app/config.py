@@ -1,5 +1,6 @@
 """Typed application configuration loaded from environment variables."""
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,6 +32,11 @@ class Settings(BaseSettings):
     osv_timeout_seconds: int = 20
     dependency_limit: int = 5000
     secret_scan_max_file_bytes: int = 2_000_000
+    allowed_repo_hosts: list[str] = Field(
+        default_factory=lambda: ["github.com", "gitee.com", "gitlab.com"]
+    )
+    repository_max_bytes: int = 250_000_000
+    repository_max_files: int = 50_000
 
 
 def get_settings() -> Settings:
