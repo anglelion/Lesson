@@ -2,7 +2,8 @@
 
 from datetime import datetime
 import logging
-from typing import Any
+from time import perf_counter
+from typing import Any, Callable
 
 from .celery_app import celery
 from .checks.dependency import dependency_check
@@ -10,7 +11,16 @@ from .checks.static_audit import static_audit
 from .checks.transport import transport_check
 from .config import settings
 from .database import SessionLocal
+from .decisions import arbitrate
 from .domain import ReviewStage, TaskStatus
+from .evidence import (
+    Finding,
+    ReviewResult,
+    ToolRun,
+    ToolStatus,
+    normalize_finding,
+    summarize_findings,
+)
 from .models import ReviewTask
 from .services.repository import acquire_snapshot
 
@@ -27,46 +37,59 @@ def _update_task(task_id: str, **changes: Any) -> None:
             setattr(task, field, value)
 
 
-def _run_checks(workdir: str, deploy_type: str) -> list[dict]:
-    findings: list[dict] = []
-
+def _execute_check(
+    tool: str,
+    check: Callable[[], list[dict]],
+) -> tuple[list[Finding], ToolRun]:
+    started_at = datetime.utcnow()
+    started_counter = perf_counter()
     try:
-        findings.extend(static_audit(workdir))
+        raw_findings = check()
+        findings = [normalize_finding(raw, tool) for raw in raw_findings]
+        tool_errors = [finding for finding in findings if finding.type == "tool_error"]
+        status = ToolStatus.FAILED if tool_errors else ToolStatus.SUCCESS
+        error = "; ".join(finding.message for finding in tool_errors) or None
     except Exception as exc:
-        logger.exception("Static audit failed")
-        findings.append(
-            {
-                "type": "tool_error",
-                "tool": "semgrep",
-                "message": str(exc),
-            }
-        )
+        logger.exception("%s check failed", tool)
+        error = str(exc)[:2000]
+        findings = [
+            normalize_finding(
+                {
+                    "type": "tool_error",
+                    "tool": tool,
+                    "message": error,
+                },
+                tool,
+            )
+        ]
+        status = ToolStatus.FAILED
 
-    try:
-        findings.extend(dependency_check(workdir))
-    except Exception as exc:
-        logger.exception("Dependency audit failed")
-        findings.append(
-            {
-                "type": "tool_error",
-                "tool": "osv",
-                "message": str(exc),
-            }
-        )
+    finished_at = datetime.utcnow()
+    run = ToolRun(
+        tool=tool,
+        status=status,
+        started_at=started_at,
+        finished_at=finished_at,
+        duration_ms=max(0, int((perf_counter() - started_counter) * 1000)),
+        finding_count=len(findings),
+        error=error,
+    )
+    return findings, run
 
-    try:
-        findings.extend(transport_check(workdir, deploy_type))
-    except Exception as exc:
-        logger.exception("Transport audit failed")
-        findings.append(
-            {
-                "type": "tool_error",
-                "tool": "transport",
-                "message": str(exc),
-            }
-        )
 
-    return findings
+def _run_checks(workdir: str, deploy_type: str) -> tuple[list[Finding], list[ToolRun]]:
+    checks: list[tuple[str, Callable[[], list[dict]]]] = [
+        ("semgrep", lambda: static_audit(workdir)),
+        ("osv", lambda: dependency_check(workdir)),
+        ("transport", lambda: transport_check(workdir, deploy_type)),
+    ]
+    findings: list[Finding] = []
+    tool_runs: list[ToolRun] = []
+    for tool, check in checks:
+        check_findings, run = _execute_check(tool, check)
+        findings.extend(check_findings)
+        tool_runs.append(run)
+    return findings, tool_runs
 
 
 @celery.task(bind=True, max_retries=2, name="mcp_audit.run_review")
@@ -99,22 +122,19 @@ def run_review(
                 resolved_commit=snapshot.commit_sha,
                 stage=ReviewStage.SCANNING,
             )
-            findings = _run_checks(str(snapshot.path), deploy_type)
+            findings, tool_runs = _run_checks(str(snapshot.path), deploy_type)
 
         _update_task(task_id, stage=ReviewStage.ARBITRATING)
-        decision = {"decision": "pass", "reason": "No findings"}
-        if findings:
-            decision = {
-                "decision": "manual_review",
-                "reason": f"Review produced {len(findings)} finding(s)",
-            }
-
-        result = {
-            "requested_ref": requested_ref,
-            "resolved_commit": snapshot.commit_sha,
-            "findings": findings,
-            "decision": decision,
-        }
+        decision = arbitrate(findings, tool_runs)
+        result_model = ReviewResult(
+            requested_ref=requested_ref,
+            resolved_commit=snapshot.commit_sha,
+            findings=findings,
+            tool_runs=tool_runs,
+            summary=summarize_findings(findings, tool_runs),
+            decision=decision,
+        )
+        result = result_model.model_dump(mode="json")
         _update_task(
             task_id,
             status=TaskStatus.SUCCESS,

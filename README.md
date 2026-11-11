@@ -208,7 +208,7 @@ FastAPI 自动生成交互式文档：`http://127.0.0.1:8000/docs`。
 6. 流水线异常进入有限重试，最终失败时保存错误和 `failed` 状态；
 7. 无论成功或失败，临时代码快照都会清理。
 
-独立仲裁模块 [`decisions.py`](backend/app/decisions.py:2) 提供更严格策略（已确认 CRITICAL / 工具投毒 → `reject`，HIGH 未确认或工具报错 → `manual_review`），目前尚未接入主流水线。
+[`evidence.py`](backend/app/evidence.py) 会把不同扫描器的输出归一化为稳定证据格式，并记录每个工具的状态与耗时；[`decisions.py`](backend/app/decisions.py) 已接入流水线，根据证据等级、风险等级和扫描覆盖情况生成确定性结论。
 
 ---
 
@@ -219,11 +219,11 @@ FastAPI 自动生成交互式文档：`http://127.0.0.1:8000/docs`。
 - [x] 增加 Docker Compose、健康检查和 Alembic 数据库迁移基础。
 - [x] 让 `ref` 真正控制 branch、tag 或 commit，并保存解析后的 commit SHA。
 - [x] 增加任务阶段、时间戳、错误、有限重试和可靠失败状态。
-- [ ] 把 [`arbitrate()`](backend/app/decisions.py:2) 接入 [`tasks.py`](backend/app/tasks.py:73)，替换简易决策。
+- [x] 统一发现项、证据等级、工具运行记录和结果摘要格式。
+- [x] 把 [`arbitrate()`](backend/app/decisions.py) 接入任务流水线。
 - [ ] 实现 [`transport_check()`](backend/app/checks/transport.py:1)（TLS、Host 校验）与 [`mcp_semantic_check()`](backend/app/checks/mcp_semantic.py:1)（工具投毒、描述一致性）。
 - [ ] 填充 `backend/rules/` 自定义 MCP 规则，并在 Semgrep 命令中挂载（`--config=/rules`）。
-- [ ] 填充 `schemas.py` / `evidence.py`，统一发现项字段（注意 `dependency.py` 中 `evidence_level` 现为「已确认」中文，与仲裁模块期望的 `confirmed` 不一致）。
-- [ ] 修正 [`update_reiew.py`](backend/app/checks/update_reiew.py:1) 文件名拼写，移除重复占位函数。
+- [x] 移除重复快照工具和拼写错误的占位模块。
 - [ ] 补充 `frontend/` 页面与单元测试；`GET /api/tasks` 未找到时建议返回 404 而非 `{"error": ...}`。
 - [ ] 为 OSV 查询、Semgrep 和大仓库补充更细粒度限流与覆盖记录。
 
