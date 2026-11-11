@@ -1,0 +1,16 @@
+services:
+  postgres:
+    restart: unless-stopped
+  redis:
+    restart: unless-stopped
+  api:
+    restart: unless-stopped
+    environment:
+      MCP_AUDIT_ENVIRONMENT: production
+      MCP_AUDIT_DEBUG: "false"
+  worker:
+    restart: unless-stopped
+    environment:
+      MCP_AUDIT_ENVIRONMENT: production
+      MCP_AUDIT_DEBUG: "false"
+
