@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from .celery_app import celery
 from .checks.dependency import dependency_check
+from .checks.secrets import secret_check
 from .checks.static_audit import static_audit
 from .checks.transport import transport_check
 from .config import settings
@@ -81,6 +82,7 @@ def _run_checks(workdir: str, deploy_type: str) -> tuple[list[Finding], list[Too
     checks: list[tuple[str, Callable[[], list[dict]]]] = [
         ("semgrep", lambda: static_audit(workdir)),
         ("osv", lambda: dependency_check(workdir)),
+        ("secret_scan", lambda: secret_check(workdir)),
         ("transport", lambda: transport_check(workdir, deploy_type)),
     ]
     findings: list[Finding] = []

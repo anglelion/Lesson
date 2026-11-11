@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     task_time_limit_seconds: int = 900
     clone_timeout_seconds: int = 180
     task_retry_delay_seconds: int = 15
+    semgrep_timeout_seconds: int = 300
+    semgrep_rule_timeout_seconds: int = 10
+    semgrep_max_target_bytes: int = 2_000_000
+    osv_timeout_seconds: int = 20
+    dependency_limit: int = 5000
+    secret_scan_max_file_bytes: int = 2_000_000
 
 
 def get_settings() -> Settings:

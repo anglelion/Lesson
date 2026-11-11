@@ -10,7 +10,7 @@ final verification and repair pass succeeds.
 | v0.1 | Project foundation, configuration, containers, migrations | Complete |
 | v0.2 | Correct Git snapshots and reliable task lifecycle | Complete |
 | v0.3 | Normalized evidence and decision arbitration | Complete |
-| v0.4 | Static, secret, and dependency security checks | Planned |
+| v0.4 | Static, secret, and dependency security checks | Complete |
 | v0.5 | MCP-specific semantic security checks | Planned |
 | v0.6 | Transport checks and untrusted-repository isolation | Planned |
 | v0.7 | API completion, frontend, progress, and reports | Planned |

@@ -10,8 +10,9 @@
 
 - **异步任务化审查**：提交即返回 `task_id`，后台 Worker 执行，前端可轮询结果。
 - **代码快照拉取**：`git clone --depth 1` 到临时目录，审查结束自动清理。
-- **静态审计**：通过 Docker 运行 `semgrep/semgrep --config=auto --json`，归一化规则 ID、文件、行号、严重级别与证据片段。
-- **依赖漏洞检查**：解析 `requirements.txt` / `requirements-dev.txt` / `pyproject.toml` 中 `==` 固定版本，调用 [OSV API](https://osv.dev/) 查询已知漏洞。
+- **静态审计**：运行 Semgrep Community Edition 的自动规则和项目本地规则，归一化规则 ID、文件、行号、严重级别与证据片段。
+- **依赖漏洞检查**：解析 Python/Node.js 依赖与锁文件，批量调用 [OSV API](https://osv.dev/) 并补充漏洞详情和修复版本。
+- **敏感信息检查**：离线检测常见私钥和令牌模式，报告中始终隐藏实际凭据值。
 - **传输/授权检查**：预留 `transport_check(workdir, deploy_type)` 接口（`stdio` 默认部署类型）。
 - **决策仲裁**：独立模块 [`arbitrate()`](backend/app/decisions.py:2) 支持 `reject` / `manual_review` / `pass`；主流水线内置简易版「有发现即转人工」。
 - **状态持久化**：`review_tasks` 表记录 `pending → running → success/failed` 及 JSON 结果。
@@ -25,7 +26,7 @@
 | Python 3.11+ / FastAPI | HTTP API | [`main.py`](backend/app/main.py) |
 | SQLAlchemy + PostgreSQL | 任务表 ORM | [`models.py`](backend/app/models.py:7) |
 | Celery + Redis | Broker `db0` / Backend `db1` | [`celery_app.py`](backend/app/celery_app.py:5) |
-| Semgrep（Docker 镜像） | 静态扫描 | [`static_audit.py`](backend/app/checks/static_audit.py:11) |
+| Semgrep Community Edition | 静态扫描 | [`static_audit.py`](backend/app/checks/static_audit.py) |
 | OSV.dev API | 依赖漏洞情报 | [`dependency.py`](backend/app/checks/dependency.py:7) |
 | Git CLI | 拉取仓库快照 | [`tasks.py`](backend/app/tasks.py:19) |
 
@@ -222,7 +223,9 @@ FastAPI 自动生成交互式文档：`http://127.0.0.1:8000/docs`。
 - [x] 统一发现项、证据等级、工具运行记录和结果摘要格式。
 - [x] 把 [`arbitrate()`](backend/app/decisions.py) 接入任务流水线。
 - [ ] 实现 [`transport_check()`](backend/app/checks/transport.py:1)（TLS、Host 校验）与 [`mcp_semantic_check()`](backend/app/checks/mcp_semantic.py:1)（工具投毒、描述一致性）。
-- [ ] 填充 `backend/rules/` 自定义 MCP 规则，并在 Semgrep 命令中挂载（`--config=/rules`）。
+- [x] 增加本地通用安全规则，并与 Semgrep 自动规则共同执行。
+- [x] 增加敏感信息扫描，确保报告不回传实际凭据。
+- [x] 扩展 Python/Node.js 锁文件解析并使用 OSV 批量查询。
 - [x] 移除重复快照工具和拼写错误的占位模块。
 - [ ] 补充 `frontend/` 页面与单元测试；`GET /api/tasks` 未找到时建议返回 404 而非 `{"error": ...}`。
 - [ ] 为 OSV 查询、Semgrep 和大仓库补充更细粒度限流与覆盖记录。

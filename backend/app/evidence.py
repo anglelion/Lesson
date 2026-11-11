@@ -134,6 +134,8 @@ def _finding_id(raw: dict[str, Any], source: str, rule_id: str, message: str) ->
             rule_id,
             str(raw.get("file") or ""),
             str(raw.get("line") or ""),
+            str(raw.get("package") or ""),
+            str(raw.get("version") or ""),
             message,
         )
     )
@@ -166,6 +168,7 @@ def normalize_finding(raw: dict[str, Any], default_source: str) -> Finding:
         "remediation",
         "package",
         "version",
+        "metadata",
     }
 
     line = raw.get("line")
@@ -186,7 +189,10 @@ def normalize_finding(raw: dict[str, Any], default_source: str) -> Finding:
         remediation=str(raw["remediation"]) if raw.get("remediation") else None,
         package=str(raw["package"]) if raw.get("package") else None,
         version=str(raw["version"]) if raw.get("version") else None,
-        metadata={key: value for key, value in raw.items() if key not in known_fields},
+        metadata={
+            **dict(raw.get("metadata") or {}),
+            **{key: value for key, value in raw.items() if key not in known_fields},
+        },
     )
 
 

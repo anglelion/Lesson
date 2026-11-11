@@ -1,0 +1,40 @@
+rules:
+  - id: mcp-audit.python.dynamic-code-execution
+    languages: [python]
+    message: Dynamic code execution can run attacker-controlled input.
+    severity: ERROR
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: exec(...)
+
+  - id: mcp-audit.python.shell-command
+    languages: [python]
+    message: Shell command execution requires strict input validation.
+    severity: WARNING
+    pattern-either:
+      - pattern: os.system(...)
+      - pattern: subprocess.$FUNC(..., shell=True, ...)
+
+  - id: mcp-audit.python.disabled-tls-verification
+    languages: [python]
+    message: TLS certificate verification is disabled.
+    severity: ERROR
+    pattern-either:
+      - pattern: requests.$METHOD(..., verify=False, ...)
+      - pattern: httpx.$METHOD(..., verify=False, ...)
+
+  - id: mcp-audit.javascript.command-execution
+    languages: [javascript, typescript]
+    message: Child process execution can run attacker-controlled commands.
+    severity: WARNING
+    pattern-either:
+      - pattern: child_process.exec(...)
+      - pattern: child_process.execSync(...)
+      - pattern: $CP.exec(...)
+      - pattern: $CP.execSync(...)
+
+  - id: mcp-audit.javascript.disabled-tls-verification
+    languages: [javascript, typescript]
+    message: Disabling TLS verification affects the entire Node.js process.
+    severity: ERROR
+    pattern: process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"

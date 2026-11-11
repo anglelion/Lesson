@@ -1,56 +1,96 @@
-# app/checks/static_audit.py
-import subprocess
+"""Run Semgrep Community Edition with registry and project-local rules."""
+
 import json
-import os
+from pathlib import Path
+import subprocess
+
+from ..config import settings
+
+
+class StaticAuditError(RuntimeError):
+    """Raised when Semgrep cannot provide trustworthy scan output."""
+
 
 def static_audit(workdir: str) -> list[dict]:
-    print(f"[静态审计] 使用 Docker 运行 Semgrep，目标目录: {workdir}")
-
-    # 将 Windows 路径转换为 Docker 可识别的格式（如果路径含空格需加引号）
-    # workdir 形如 C:\Users\...\Temp\mcp_xxx，Docker 挂载时直接使用 Windows 路径即可
-    cmd = [
-        "docker", "run", "--rm",
-        "-v", f"{workdir}:/src",
-        "semgrep/semgrep",
-        "semgrep", "scan",
-        "--config=auto",
+    rules_dir = Path(__file__).resolve().parents[2] / "rules"
+    command = [
+        "semgrep",
+        "scan",
+        "--config",
+        "auto",
+        "--config",
+        str(rules_dir),
         "--json",
         "--quiet",
-        "/src"
+        "--metrics=off",
+        "--timeout",
+        str(settings.semgrep_rule_timeout_seconds),
+        "--timeout-threshold",
+        "3",
+        "--max-target-bytes",
+        str(settings.semgrep_max_target_bytes),
+        workdir,
     ]
 
-    print(f"[静态审计] 执行命令: {' '.join(cmd)}")
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=settings.semgrep_timeout_seconds,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise StaticAuditError("Semgrep executable is not installed") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise StaticAuditError("Semgrep scan exceeded its global time limit") from exc
+
+    if not result.stdout.strip():
+        detail = result.stderr.strip() or "Semgrep produced no JSON output"
+        raise StaticAuditError(detail[:2000])
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        if not result.stdout.strip():
-            print(f"[静态审计] 无标准输出，错误详情:\n{result.stderr[:500]}")
-            return [{"type": "tool_error", "tool": "semgrep", "message": "Docker 运行无 JSON 输出"}]
-
         data = json.loads(result.stdout)
-    except subprocess.TimeoutExpired:
-        return [{"type": "tool_error", "tool": "semgrep", "message": "扫描超时（300秒）"}]
-    except json.JSONDecodeError as e:
-        print(f"[静态审计] JSON 解析失败: {e}")
-        print(f"原始输出前 300 字: {result.stdout[:300]}")
-        return [{"type": "tool_error", "tool": "semgrep", "message": "输出不是合法 JSON"}]
-    except Exception as e:
-        return [{"type": "tool_error", "tool": "semgrep", "message": str(e)}]
+    except json.JSONDecodeError as exc:
+        raise StaticAuditError("Semgrep output was not valid JSON") from exc
 
-    findings = []
-    for r in data.get("results", []):
-        # Docker 容器内路径以 /src 开头，需要替换掉以便和本地路径对应
-        file_path = r.get("path", "").replace("/src/", "")
-        findings.append({
-            "rule_id": r.get("check_id"),
-            "file": file_path,
-            "line": r.get("start", {}).get("line"),
-            "severity": r.get("extra", {}).get("severity", "INFO"),
-            "message": r.get("extra", {}).get("message", "无描述"),
-            "evidence": r.get("extra", {}).get("lines", "")[:200],
-            "source": "semgrep",
-            "type": "static_vuln"
-        })
+    if result.returncode != 0:
+        errors = data.get("errors") or []
+        detail = "; ".join(str(error.get("message") or error) for error in errors)
+        detail = detail or result.stderr.strip() or f"Semgrep exited with {result.returncode}"
+        raise StaticAuditError(detail[:2000])
 
-    print(f"[静态审计] Semgrep(Docker) 扫描完成，发现 {len(findings)} 个问题。")
+    findings: list[dict] = []
+    root = Path(workdir).resolve()
+    for item in data.get("results", []):
+        extra = item.get("extra") or {}
+        start = item.get("start") or {}
+        end = item.get("end") or {}
+        raw_path = Path(str(item.get("path") or ""))
+        try:
+            candidate = raw_path if raw_path.is_absolute() else root / raw_path
+            file_path = candidate.resolve().relative_to(root).as_posix()
+        except (OSError, ValueError):
+            file_path = raw_path.as_posix().removeprefix("/src/")
+
+        findings.append(
+            {
+                "rule_id": item.get("check_id") or "semgrep:unknown",
+                "type": "static_vulnerability",
+                "file": file_path,
+                "line": start.get("line"),
+                "end_line": end.get("line"),
+                "severity": extra.get("severity", "UNKNOWN"),
+                "evidence_level": "likely",
+                "message": extra.get("message") or "Semgrep rule matched",
+                "evidence": str(extra.get("lines") or "")[:1000],
+                "remediation": (extra.get("metadata") or {}).get("fix"),
+                "source": "semgrep",
+                "metadata": {
+                    "engine_kind": extra.get("engine_kind"),
+                    "metadata": extra.get("metadata") or {},
+                },
+            }
+        )
+
     return findings
