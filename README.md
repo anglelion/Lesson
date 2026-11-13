@@ -6,6 +6,16 @@
 
 ---
 
+## 系统架构概览
+
+![MCP Audit 系统组件架构](docs/diagrams/system-architecture.svg)
+
+浏览器通过 FastAPI 创建和查询审查任务，Redis 将异步任务交给 Celery Worker；Worker 获取精确 Git
+快照，依次执行五类安全检查，将统一证据、扫描覆盖情况和仲裁结论保存到 PostgreSQL。完整时序与扫描
+决策流程参见[系统架构文档](docs/architecture.md)。
+
+---
+
 ## 功能特性
 
 - **异步任务化审查**：提交即返回 `task_id`，后台 Worker 执行，前端可轮询结果。

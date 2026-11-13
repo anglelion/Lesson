@@ -1,0 +1,49 @@
+flowchart TD
+    Input["仓库 URL + branch / tag / commit"]
+    Guard["来源、协议、Host 与 DNS 校验"]
+    Clone["浅克隆并解析精确 commit SHA"]
+    Limits["文件数量、总大小、符号链接边界检查"]
+
+    subgraph Checks["安全检查阶段"]
+        S1["Semgrep CE<br/>通用静态漏洞"]
+        S2["OSV<br/>依赖漏洞"]
+        S3["Secret Scan<br/>凭据与私钥"]
+        S4["MCP Semantic<br/>工具投毒、Schema、行为不一致"]
+        S5["Transport<br/>鉴权、Host、CORS、明文传输"]
+    end
+
+    Normalize["normalize_finding<br/>统一 ID、类型、严重度、证据等级与位置"]
+    Coverage["记录每个 tool_run<br/>状态、耗时、发现数量、错误"]
+    Failed{"必需扫描器失败？"}
+    Blocking{"确认的严重风险<br/>或可信工具投毒？"}
+    Review{"存在中高风险<br/>或需人工确认？"}
+    Manual["MANUAL_REVIEW<br/>覆盖不足或需要人工确认"]
+    Reject["REJECT<br/>阻断性风险"]
+    Pass["PASS<br/>检查完整且无阻断风险"]
+    Result["版本化 ReviewResult<br/>findings · tool_runs · summary · decision"]
+    Cleanup["清理临时快照"]
+
+    Input --> Guard --> Clone --> Limits
+    Limits --> S1 & S2 & S3 & S4 & S5
+    S1 & S2 & S3 & S4 & S5 --> Normalize
+    Normalize --> Coverage --> Failed
+    Failed -- "是" --> Manual
+    Failed -- "否" --> Blocking
+    Blocking -- "是" --> Reject
+    Blocking -- "否" --> Review
+    Review -- "是" --> Manual
+    Review -- "否" --> Pass
+    Manual & Reject & Pass --> Result --> Cleanup
+
+    classDef guard fill:#fef3c7,stroke:#d97706,color:#0f172a,stroke-width:2px;
+    classDef scan fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:2px;
+    classDef policy fill:#ede9fe,stroke:#7c3aed,color:#0f172a,stroke-width:2px;
+    classDef danger fill:#fee2e2,stroke:#dc2626,color:#7f1d1d,stroke-width:2px;
+    classDef review fill:#ffedd5,stroke:#ea580c,color:#7c2d12,stroke-width:2px;
+    classDef safe fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:2px;
+    class Guard,Clone,Limits guard;
+    class S1,S2,S3,S4,S5,Normalize,Coverage scan;
+    class Failed,Blocking,Review,Result,Cleanup policy;
+    class Reject danger;
+    class Manual review;
+    class Pass safe;

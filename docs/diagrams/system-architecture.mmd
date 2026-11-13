@@ -1,0 +1,35 @@
+flowchart LR
+    User(["审查人员"])
+    UI["Web 审查控制台"]
+    API["FastAPI<br/>提交 · 查询 · 重试 · 报告"]
+    Redis[("Redis<br/>Broker / Result Backend")]
+    Worker["Celery Worker<br/>任务编排与有限重试"]
+    Snapshot["临时 Git 快照<br/>固定 commit SHA"]
+    Scanners["安全扫描器组<br/>Semgrep · OSV · Secret<br/>MCP Semantic · Transport"]
+    Policy["证据归一化<br/>确定性仲裁"]
+    PG[("PostgreSQL<br/>任务 · 状态 · 证据 · 结论")]
+    Migration["Alembic<br/>数据库迁移"]
+    Git["GitHub / GitLab / Gitee"]
+    Rules["Semgrep Registry"]
+    OSV["OSV API"]
+
+    User --> UI --> API
+    API -->|"发布任务"| Redis -->|"消费任务"| Worker
+    Worker --> Snapshot --> Scanners --> Policy
+    API -->|"创建与查询任务"| PG
+    Policy -->|"保存 findings、tool_runs、decision"| PG
+    Migration -.->|"维护表结构"| PG
+    Git -.->|"精确拉取 ref"| Snapshot
+    Rules -.->|"安全规则"| Scanners
+    OSV -.->|"漏洞情报"| Scanners
+
+    classDef person fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:2px;
+    classDef access fill:#e0f2fe,stroke:#0284c7,color:#0f172a,stroke-width:2px;
+    classDef data fill:#ede9fe,stroke:#7c3aed,color:#0f172a,stroke-width:2px;
+    classDef audit fill:#dcfce7,stroke:#16a34a,color:#0f172a,stroke-width:2px;
+    classDef external fill:#fef3c7,stroke:#d97706,color:#0f172a,stroke-width:1.5px;
+    class User person;
+    class UI,API access;
+    class Redis,PG,Migration data;
+    class Worker,Snapshot,Scanners,Policy audit;
+    class Git,Rules,OSV external;

@@ -1,0 +1,47 @@
+sequenceDiagram
+    autonumber
+    actor User as 审查人员
+    participant UI as Web 控制台
+    participant API as FastAPI
+    participant DB as PostgreSQL
+    participant MQ as Redis
+    participant Worker as Celery Worker
+    participant Git as Git 仓库
+    participant Scan as 扫描器组
+
+    User->>UI: 填写仓库 URL、ref、部署类型
+    UI->>API: POST /api/submit
+    API->>DB: 创建 pending / queued 任务
+    API->>MQ: 发布 run_review(task_id)
+    API-->>UI: 202 Accepted + task_id
+
+    Worker->>MQ: 消费任务
+    Worker->>DB: running / fetching
+    Worker->>Git: 校验来源并拉取指定 ref
+    Git-->>Worker: 精确 commit 快照
+    Worker->>DB: 保存 resolved_commit，进入 scanning
+
+    loop 五个扫描器顺序执行
+        Worker->>Scan: 扫描只读临时快照
+        Scan-->>Worker: 原始 findings / 扫描状态 / 耗时
+        Worker->>Worker: 归一化证据并记录 tool_run
+    end
+
+    Worker->>Worker: 汇总证据并执行确定性仲裁
+    Worker->>DB: 保存 result，进入 completed
+
+    loop 前端轮询
+        UI->>API: GET /api/tasks/{task_id}
+        API->>DB: 查询任务状态与结果
+        DB-->>API: task + result
+        API-->>UI: 当前进度或最终结论
+    end
+
+    User->>UI: 查看风险 / 下载 JSON 或 Markdown 报告
+
+    alt 编排异常且仍可重试
+        Worker->>DB: pending / retrying + error
+        Worker->>MQ: 延迟重新入队
+    else 达到最大重试次数
+        Worker->>DB: failed + error + finished_at
+    end
